@@ -150,9 +150,6 @@ impl Session {
             }
 
 
-            for cookie in &self.data.cookies {
-                println!("Cookie: {}", cookie);
-            }
             if self.data.cookies.len() > 0 {
                 let cookies: Vec<String> = self.data.cookies.iter().map(|x| x.clone()).collect();
                 request_builder =
