@@ -10,6 +10,8 @@ pub enum Error {
     JsonError(serde_json::Error),
     InvalidStatusCode(http::status::InvalidStatusCode),
     InvalidHeaderValue(http::header::InvalidHeaderValue),
+    ParseError(chrono::format::ParseError),
+    InvalidDriveNodeType,
     InvalidCredentials,
     Needs2FA,
     AuthenticationFailed,
@@ -50,8 +52,14 @@ impl std::fmt::Display for Error {
             Error::InvalidHeaderValue(err) => {
                 write!(f, "{}", err)
             }
+            Error::ParseError(err) => {
+                write!(f, "{}", err)
+            }
             Error::MutexError => {
                 write!(f, "Mutex error")
+            }
+            Error::InvalidDriveNodeType => {
+                write!(f, "Invalid drive node type")
             }
             Error::InvalidCredentials => {
                 write!(f, "Invalid credentials.")
@@ -120,5 +128,11 @@ impl From<http::status::InvalidStatusCode> for Error {
 impl From<http::header::InvalidHeaderValue> for Error {
     fn from(error: http::header::InvalidHeaderValue) -> Error {
         Error::InvalidHeaderValue(error)
+    }
+}
+
+impl From<chrono::format::ParseError> for Error {
+    fn from(error: chrono::format::ParseError) -> Error {
+        Error::ParseError(error)
     }
 }

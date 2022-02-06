@@ -1,18 +1,12 @@
-use std::path::Path;
-use std::io::{
-    stdin, 
-    stdout,
-    BufReader,
-    BufWriter,
-    Write
-};
 use std::fs::File;
+use std::io::{stdin, stdout, BufReader, BufWriter, Write};
+use std::path::Path;
 
 extern crate icloud;
+use crate::icloud::drive::DriveNode;
 use crate::icloud::error::Error;
 use crate::icloud::session::SessionData;
 use crate::icloud::Client;
-
 
 async fn login_prompt() -> (String, String) {
     print!("Enter username: ");
@@ -55,42 +49,34 @@ async fn authenticate(client: &mut Client) -> Result<(), Error> {
         Err(Error::AuthenticationFailed) | Err(Error::MissingCacheItem(_)) => {
             let (username, password) = login_prompt().await;
             match client.login(username.as_str(), password.as_str()).await {
-                Ok(()) => {
-                    Ok(())
-                },
-                Err(err) => {
-                    match err {
-                        Error::Needs2FA => {
-                            let code = prompt_2fa().await;
-                            client.authenticate_2fa(code.as_str()).await?;
-                            Ok(())
-                        }, _ => {
-                            Err(err)
-                        }
+                Ok(()) => Ok(()),
+                Err(err) => match err {
+                    Error::Needs2FA => {
+                        let code = prompt_2fa().await;
+                        client.authenticate_2fa(code.as_str()).await?;
+                        Ok(())
                     }
+                    _ => Err(err),
                 },
             }
-        },
+        }
         Err(Error::Needs2FA) => {
             let code = prompt_2fa().await;
             client.authenticate_2fa(code.as_str()).await?;
             Ok(())
-        },
+        }
         Err(err) => {
             println!("{}", err);
             Err(err)
-        },
-        Ok(()) => {
-            Ok(())
         }
+        Ok(()) => Ok(()),
     }
 }
 
 #[tokio::main]
 pub async fn main() -> Result<(), Error> {
-
     let path = Path::new("cache.json");
-    let session_data : SessionData = if path.exists() {
+    let session_data: SessionData = if path.exists() {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
@@ -99,8 +85,15 @@ pub async fn main() -> Result<(), Error> {
     };
 
     if let Ok(mut client) = Client::new(session_data) {
-
         authenticate(&mut client).await?;
+
+        if let Some(mut drive) = client.drive() {
+            if let DriveNode::Folder(folder) = drive.root().await? {
+                for item in folder.iter() {
+                    println!("{}", item);
+                }
+            }
+        }
 
         let file = if path.exists() {
             File::open(path)

@@ -1,46 +1,102 @@
 use crate::error::Error;
 use crate::session::Session;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, FixedOffset};
 use hyper::body::Buf;
 use hyper::{Body, Method, StatusCode};
 use serde_json::json;
+use serde_json::value::Value;
 use std::sync::{Arc, Mutex};
 
-pub enum DriveNodeType {
-    Folder,
+pub struct Folder {
+    id: String,
+    name: String,
+    date_created: DateTime<FixedOffset>,
+    items: Vec<DriveNode>,
 }
 
-impl TryFrom<String> for DriveNodeType {
-    type Error = Error;
+pub struct FolderIter<'a> {
+    current: std::slice::Iter<'a, DriveNode>
+}
 
-    fn try_from(s: String) -> Result<DriveNodeType, Error> {
-        match s.as_str() {
-            "FOLDER" => Ok(DriveNodeType::Folder),
-            _ => Err(Error::AuthenticationFailed),
+impl<'a> Iterator for FolderIter<'a> {
+
+    type Item = &'a DriveNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.current.next()
+    }
+
+}
+
+impl Folder {
+
+    pub fn iter(&self) -> FolderIter {
+        FolderIter{
+            current: self.items.iter()
+        }
+    }
+
+}
+
+pub enum DriveNode {
+    Folder(Folder),
+}
+
+impl DriveNode {
+    fn new(value: &Value) -> Result<DriveNode, Error> {
+        match value["type"].as_str().ok_or(Error::InvalidDriveNodeType)? {
+            "FOLDER" => Ok(DriveNode::Folder(Folder {
+                id: String::from(value["drivewsid"].as_str().unwrap()),
+                name: String::from(value["name"].as_str().unwrap()),
+                date_created: DateTime::parse_from_rfc3339(value["dateCreated"].as_str().unwrap())?,
+                items: value["items"].as_array().map_or(Vec::new(), |array| {
+                    let mut items = Vec::new();
+                    for item in array {
+                        if let Ok(node) = DriveNode::new(item) {
+                            items.push(node);
+                        }
+                    }
+                    items
+                }),
+            })), _ => {
+                Err(Error::InvalidDriveNodeType)
+            }
+        }
+    }
+
+    pub fn id(&self) -> &String {
+        match self {
+            DriveNode::Folder(folder) => &folder.id,
+        }
+    }
+
+    pub fn name(&self) -> &String {
+        match self {
+            DriveNode::Folder(folder) => &folder.name,
+        }
+    }
+
+    pub fn date_created(&self) -> DateTime<FixedOffset> {
+        match self {
+            DriveNode::Folder(folder) => folder.date_created,
         }
     }
 }
 
-pub struct DriveNode {
-    id: String,
-    name: String,
-    r#type: DriveNodeType,
-    size: u64,
-    date_changed: DateTime<Local>,
-    date_modified: DateTime<Local>,
-    date_last_opened: DateTime<Local>,
-    items: Vec<DriveNode>,
-}
-
 impl std::fmt::Display for DriveNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "DriveNode(id={},name={},items={}(",
-            self.id,
-            self.name,
-            self.items.len()
-            )
+        match self {
+            DriveNode::Folder(folder) => {
+                write!(
+                    f,
+                    "Folder(id={},name={},dateCreated={}, items={})",
+                    folder.id,
+                    folder.name,
+                    folder.date_created,
+                    folder.items.len()
+                )
+            }
+        }
     }
 }
 
@@ -69,9 +125,9 @@ impl DriveService {
                              "partialData": false
                          }
         ])
-            .to_string();
+        .to_string();
 
-        if let Ok(mut session) = self.session.lock() { 
+        if let Ok(mut session) = self.session.lock() {
             let response = session
                 .request(Method::POST, uri, Body::from(body), |builder| {
                     if let Some(headers) = builder.headers_mut() {
@@ -80,25 +136,12 @@ impl DriveService {
                     }
                     Ok(())
                 })
-            .await?;
-
+                .await?;
 
             if response.status() == StatusCode::OK {
                 let body = hyper::body::aggregate(response).await?;
                 let drive_node: serde_json::Value = serde_json::from_reader(body.reader())?;
-                println!("{}", drive_node[0]["items"][1]);
-                Ok(DriveNode {
-                    id: String::from(drive_node[0]["drivewsid"].as_str().unwrap()),
-                    name: String::from(drive_node[0]["name"].as_str().unwrap()),
-                    r#type: DriveNodeType::try_from(String::from(
-                            drive_node[0]["type"].as_str().unwrap(),
-                            ))?,
-                            size: 0,
-                            date_changed: Local::now(),
-                            date_modified: Local::now(),
-                            date_last_opened: Local::now(),
-                            items: Vec::new(),
-                })
+                Ok(DriveNode::new(&drive_node[0])?)
             } else {
                 let body = hyper::body::aggregate(response).await?;
                 let drive_info: serde_json::Value = serde_json::from_reader(body.reader())?;
