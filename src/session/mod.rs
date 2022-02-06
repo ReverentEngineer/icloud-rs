@@ -44,34 +44,10 @@ const AUTH_HEADERS: [(&'static str, &'static str); 7] = [
             ),
 ];
 
-#[derive(PartialEq)]
-pub enum AuthenticationState {
-    Unauthenticated,
-    NeedsSecondFactor,
-    Authenticated,
-}
-
-impl std::fmt::Display for AuthenticationState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        match self {
-            AuthenticationState::Unauthenticated => {
-                write!(f, "Unauthenticated")
-            }
-            AuthenticationState::NeedsSecondFactor => {
-                write!(f, "Needs 2FA")
-            }
-            AuthenticationState::Authenticated => {
-                write!(f, "Authenticated")
-            }
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ServiceInfo {
     pub url: String
 }
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SessionData {
@@ -227,16 +203,16 @@ impl Session {
         if response.status() == StatusCode::OK {
             if let Some(rscd) = response.headers().get(APPLE_RESPONSE_HEADER) {
                 if StatusCode::from_bytes(rscd.as_bytes())? != StatusCode::CONFLICT {
-                    return Err(Error::InvalidCredentials);
+                    return Err(Error::InvalidCredentials)
                 }
             }
-            Ok(())
+            self.authenticate().await
         } else {
             Err(Error::InvalidCredentials)
         }
     }
 
-    pub async fn authenticate(&mut self) -> Result<AuthenticationState, Error> {
+    pub async fn authenticate(&mut self) -> Result<(), Error> {
         let body = json!({
             "accountCountryCode": self.data.account_country.as_ref()
                 .ok_or(Error::MissingCacheItem(String::from(ACCOUNT_COUNTRY_HEADER)))?,
@@ -274,15 +250,18 @@ impl Session {
 
             if auth_info["hsaChallengeRequired"] == true {
                 if auth_info["hsaTrustedBrowser"] == true {
-                    Ok(AuthenticationState::Authenticated)
+                    Ok(())
                 } else {
-                    Ok(AuthenticationState::NeedsSecondFactor)
+                    Err(Error::Needs2FA)
                 }
             } else {
-                Ok(AuthenticationState::Authenticated)
+                Ok(())
             }
         } else {
-            Ok(AuthenticationState::Unauthenticated)
+            let body = hyper::body::aggregate(response).await?;
+            let auth_info: serde_json::Value = serde_json::from_reader(body.reader())?;
+            println!("{}", auth_info);
+            Err(Error::AuthenticationFailed)
         }
     }
 

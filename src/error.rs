@@ -10,10 +10,11 @@ pub enum Error {
     JsonError(serde_json::Error),
     InvalidStatusCode(http::status::InvalidStatusCode),
     InvalidHeaderValue(http::header::InvalidHeaderValue),
-    MutexError,
     InvalidCredentials,
+    Needs2FA,
     AuthenticationFailed,
     TrustFailed,
+    MutexError,
 }
 
 impl std::fmt::Display for Error {
@@ -54,6 +55,9 @@ impl std::fmt::Display for Error {
             }
             Error::InvalidCredentials => {
                 write!(f, "Invalid credentials.")
+            }
+            Error::Needs2FA => {
+                write!(f, "Needs two-factor authentication")
             }
             Error::AuthenticationFailed => {
                 write!(f, "Authentication failed.")

@@ -10,10 +10,7 @@ use std::fs::File;
 
 extern crate icloud;
 use crate::icloud::error::Error;
-use crate::icloud::session::{
-    AuthenticationState, 
-    SessionData
-};
+use crate::icloud::session::SessionData;
 use crate::icloud::Client;
 
 
@@ -35,6 +32,60 @@ async fn login_prompt() -> (String, String) {
     (username, password)
 }
 
+async fn prompt_2fa() -> String {
+    print!("Enter 2FA code: ");
+    stdout().flush().unwrap();
+    let mut code = String::new();
+    if let Err(msg) = stdin().read_line(&mut code) {
+        panic!("{}", msg);
+    }
+    code.truncate(code.len() - 1);
+    code
+}
+
+async fn drive_lookup(client: &mut Client) -> Result<(), Error> {
+    if let Some(mut drive) = client.drive() {
+        drive.root().await?;
+    }
+    Ok(())
+}
+
+async fn authenticate(client: &mut Client) -> Result<(), Error> {
+    match client.authenticate().await {
+        Err(Error::AuthenticationFailed) | Err(Error::MissingCacheItem(_)) => {
+            let (username, password) = login_prompt().await;
+            match client.login(username.as_str(), password.as_str()).await {
+                Ok(()) => {
+                    Ok(())
+                },
+                Err(err) => {
+                    match err {
+                        Error::Needs2FA => {
+                            let code = prompt_2fa().await;
+                            client.authenticate_2fa(code.as_str()).await?;
+                            Ok(())
+                        }, _ => {
+                            Err(err)
+                        }
+                    }
+                },
+            }
+        },
+        Err(Error::Needs2FA) => {
+            let code = prompt_2fa().await;
+            client.authenticate_2fa(code.as_str()).await?;
+            Ok(())
+        },
+        Err(err) => {
+            println!("{}", err);
+            Err(err)
+        },
+        Ok(()) => {
+            Ok(())
+        }
+    }
+}
+
 #[tokio::main]
 pub async fn main() -> Result<(), Error> {
 
@@ -47,18 +98,17 @@ pub async fn main() -> Result<(), Error> {
         SessionData::new()?
     };
 
-    if let Ok(mut icloud) = Client::new(session_data) {
-        if let Some(mut drive) = icloud.drive() {
-            drive.root().await?;
-        }
-    
+    if let Ok(mut client) = Client::new(session_data) {
+
+        authenticate(&mut client).await?;
+
         let file = if path.exists() {
             File::open(path)
         } else {
             File::create(path)
         }?;
         let writer = BufWriter::new(file);
-        let data = icloud.save();
+        let data = client.save();
         serde_json::to_writer(writer, &data)?;
     }
 

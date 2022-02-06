@@ -30,6 +30,21 @@ impl Client {
             })
         })
     }
+    
+    pub async fn authenticate(&mut self) -> Result<(), Error> {
+        let mut session = self.session.lock().or(Err(Error::MutexError))?;
+        session.authenticate().await
+    }
+    
+    pub async fn login(&mut self, username: &str, password: &str) -> Result<(), Error> {
+        let mut session = self.session.lock().or(Err(Error::MutexError))?;
+        session.login(username, password).await
+    }
+    
+    pub async fn authenticate_2fa(&mut self, code: &str) -> Result<(), Error> {
+        let mut session = self.session.lock().or(Err(Error::MutexError))?;
+        session.authenticate_2fa(code).await
+    }
 
     pub fn save(&mut self) -> Option<SessionData> {
         self.session.lock().ok().map_or(None, |s| Some(s.data().clone()))
