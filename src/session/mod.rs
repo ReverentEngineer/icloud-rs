@@ -1,13 +1,12 @@
+use std::collections::BTreeMap;
 use hyper::body::Buf;
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Method, Request, Response, StatusCode};
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::{BTreeMap, BTreeSet};
 
 mod uuid;
-use crate::drive::DriveService;
 use crate::error::Error;
 
 const GLOBAL_HEADERS: [(&'static str, &'static str); 2] = [
@@ -32,16 +31,16 @@ const AUTH_HEADERS: [(&'static str, &'static str); 7] = [
     (
         "X-Apple-OAuth-Client-Id",
         "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d",
-    ),
-    ("X-Apple-OAuth-Client-Type", "firstPartyAuth"),
-    ("X-Apple-OAuth-Redirect-URI", "https://www.icloud.com"),
-    ("X-Apple-OAuth-Require-Grant-Code", "true"),
-    ("X-Apple-OAuth-Response-Mode", "web_message"),
-    ("X-Apple-OAuth-Response-Type", "code"),
-    (
-        "X-Apple-Widget-Key",
-        "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d",
-    ),
+        ),
+        ("X-Apple-OAuth-Client-Type", "firstPartyAuth"),
+        ("X-Apple-OAuth-Redirect-URI", "https://www.icloud.com"),
+        ("X-Apple-OAuth-Require-Grant-Code", "true"),
+        ("X-Apple-OAuth-Response-Mode", "web_message"),
+        ("X-Apple-OAuth-Response-Type", "code"),
+        (
+            "X-Apple-Widget-Key",
+            "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d",
+            ),
 ];
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -57,7 +56,7 @@ pub struct SessionData {
     trust_token: Option<String>,
     scnt: Option<String>,
     account_country: Option<String>,
-    cookies: BTreeSet<String>,
+    cookies: BTreeMap<String, String>,
     webservices: BTreeMap<String, ServiceInfo>,
 }
 
@@ -70,7 +69,7 @@ impl SessionData {
             trust_token: None,
             scnt: None,
             account_country: None,
-            cookies: BTreeSet::new(),
+            cookies: BTreeMap::new(),
             webservices: BTreeMap::new(),
         })
     }
@@ -85,13 +84,13 @@ impl Session {
     pub fn new(data: SessionData) -> Result<Session, Error> {
         Ok(Session {
             client: Client::builder().build(
-                HttpsConnectorBuilder::new()
-                    .with_native_roots()
-                    .https_only()
-                    .enable_http1()
-                    .build(),
-            ),
-            data: data,
+                        HttpsConnectorBuilder::new()
+                        .with_native_roots()
+                        .https_only()
+                        .enable_http1()
+                        .build(),
+                        ),
+                        data: data,
         })
     }
 
@@ -101,75 +100,78 @@ impl Session {
         uri: String,
         body: Body,
         f: F,
-    ) -> Result<Response<Body>, Error>
-    where
+        ) -> Result<Response<Body>, Error>
+        where
         F: FnOnce(&mut http::request::Builder) -> Result<(), Error>,
-    {
-        let mut request_builder = Request::builder().method(method).uri(uri);
+        {
+            let mut request_builder = Request::builder().method(method).uri(uri);
 
-        request_builder = request_builder.header(
-            &String::from(OAUTH_STATE_HEADER),
-            self.data.oauth_state.clone(),
-        );
+            request_builder = request_builder.header(
+                &String::from(OAUTH_STATE_HEADER),
+                self.data.oauth_state.clone(),
+                );
 
-        if let Some(session_id) = &self.data.session_id {
-            request_builder = request_builder.header(&String::from(SESSION_ID_HEADER), session_id);
-        }
+            if let Some(session_id) = &self.data.session_id {
+                request_builder = request_builder.header(&String::from(SESSION_ID_HEADER), session_id);
+            }
 
-        if let Some(scnt) = &self.data.scnt {
-            request_builder = request_builder.header(&String::from(SCNT_HEADER), scnt);
-        }
+            if let Some(scnt) = &self.data.scnt {
+                request_builder = request_builder.header(&String::from(SCNT_HEADER), scnt);
+            }
 
-        for (key, value) in GLOBAL_HEADERS {
-            request_builder = request_builder.header(key, value);
-        }
+            for (key, value) in GLOBAL_HEADERS {
+                request_builder = request_builder.header(key, value);
+            }
 
-        if self.data.cookies.len() > 0 {
-            let cookies: Vec<String> = self.data.cookies.iter().map(|x| x.clone()).collect();
-            request_builder =
-                request_builder.header(hyper::header::COOKIE, cookies.as_slice().join("; "));
-        }
+            if self.data.cookies.len() > 0 {
+                let cookies: Vec<String> = self.data.cookies.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+                request_builder =
+                    request_builder.header(hyper::header::COOKIE, cookies.as_slice().join("; "));
+            }
 
-        f(&mut request_builder)?;
+            f(&mut request_builder)?;
 
-        match self.client.request(request_builder.body(body)?).await {
-            Ok(response) => {
-                if let Some(account_country) = response.headers().get(ACCOUNT_COUNTRY_HEADER) {
-                    self.data.account_country = Some(String::from(account_country.to_str()?));
-                }
+            match self.client.request(request_builder.body(body)?).await {
+                Ok(response) => {
+                    if let Some(account_country) = response.headers().get(ACCOUNT_COUNTRY_HEADER) {
+                        self.data.account_country = Some(String::from(account_country.to_str()?));
+                    }
 
-                if let Some(session_id) = response.headers().get(SESSION_ID_HEADER) {
-                    self.data.session_id = Some(String::from(session_id.to_str()?));
-                }
+                    if let Some(session_id) = response.headers().get(SESSION_ID_HEADER) {
+                        self.data.session_id = Some(String::from(session_id.to_str()?));
+                    }
 
-                if let Some(session_token) = response.headers().get(SESSION_TOKEN_HEADER) {
-                    self.data.session_token = Some(String::from(session_token.to_str()?));
-                }
+                    if let Some(session_token) = response.headers().get(SESSION_TOKEN_HEADER) {
+                        self.data.session_token = Some(String::from(session_token.to_str()?));
+                    }
 
-                if let Some(scnt) = response.headers().get(SCNT_HEADER) {
-                    self.data.scnt = Some(String::from(scnt.to_str()?));
-                }
+                    if let Some(scnt) = response.headers().get(SCNT_HEADER) {
+                        self.data.scnt = Some(String::from(scnt.to_str()?));
+                    }
 
-                if let Some(trust_token) = response.headers().get(TRUST_TOKEN_HEADER) {
-                    self.data.trust_token = Some(String::from(trust_token.to_str()?));
-                }
+                    if let Some(trust_token) = response.headers().get(TRUST_TOKEN_HEADER) {
+                        self.data.trust_token = Some(String::from(trust_token.to_str()?));
+                    }
 
-                for (key, value) in response.headers() {
-                    if key == hyper::header::SET_COOKIE {
-                        if let Some(cookie) = value.to_str()?.split(";").next() {
-                            self.data.cookies.insert(String::from(cookie));
+                    for (key, value) in response.headers() {
+                        if key == hyper::header::SET_COOKIE {
+                            if let Some(cookie) = value.to_str()?.split(";").next() {
+                                if let Some((key, value)) = cookie.split_once("=") {
+                                    self.data.cookies.insert(String::from(key), String::from(value));
+
+                                }
+                            }
                         }
                     }
-                }
 
-                match response.status() {
-                    StatusCode::UNAUTHORIZED => Err(Error::AuthenticationFailed),
-                    _ => Ok(response),
+                    match response.status() {
+                        StatusCode::UNAUTHORIZED => Err(Error::AuthenticationFailed(String::from("Unauthorized request"))),
+                        _ => Ok(response),
+                    }
                 }
+                Err(err) => Err(Error::from(err)),
             }
-            Err(err) => Err(Error::from(err)),
         }
-    }
 
     pub async fn login(&mut self, username: &str, password: &str) -> Result<(), Error> {
         let body = json!({
@@ -193,7 +195,7 @@ impl Session {
                 }
                 Ok(())
             })
-            .await?;
+        .await?;
 
         if response.status() == StatusCode::OK {
             if let Some(rscd) = response.headers().get(APPLE_RESPONSE_HEADER) {
@@ -231,7 +233,7 @@ impl Session {
                 }
                 Ok(())
             })
-            .await?;
+        .await?;
 
         if response.status() == StatusCode::OK {
             let body = hyper::body::aggregate(response).await?;
@@ -243,7 +245,7 @@ impl Session {
                     ServiceInfo {
                         url: drivews_url.to_string(),
                     },
-                );
+                    );
             }
 
             if auth_info["hsaChallengeRequired"] == true {
@@ -256,9 +258,7 @@ impl Session {
                 Ok(())
             }
         } else {
-            let body = hyper::body::aggregate(response).await?;
-            let auth_info: serde_json::Value = serde_json::from_reader(body.reader())?;
-            Err(Error::AuthenticationFailed)
+            Err(Error::AuthenticationFailed(String::from("Invalid token")))
         }
     }
 
@@ -275,10 +275,10 @@ impl Session {
                 }
                 Ok(())
             })
-            .await?;
+        .await?;
 
         if response.status() == StatusCode::NO_CONTENT {
-            Ok(())
+            self.authenticate().await
         } else {
             Err(Error::TrustFailed)
         }
@@ -305,12 +305,12 @@ impl Session {
                 }
                 Ok(())
             })
-            .await?;
+        .await?;
 
         if response.status() == StatusCode::NO_CONTENT {
-            Ok(())
+            self.trust_session().await
         } else {
-            Err(Error::AuthenticationFailed)
+            Err(Error::AuthenticationFailed(String::from("Invalid 2FA code")))
         }
     }
 

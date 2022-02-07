@@ -37,16 +37,9 @@ async fn prompt_2fa() -> String {
     code
 }
 
-async fn drive_lookup(client: &mut Client) -> Result<(), Error> {
-    if let Some(mut drive) = client.drive() {
-        drive.root().await?;
-    }
-    Ok(())
-}
-
 async fn authenticate(client: &mut Client) -> Result<(), Error> {
     match client.authenticate().await {
-        Err(Error::AuthenticationFailed) | Err(Error::MissingCacheItem(_)) => {
+        Err(Error::AuthenticationFailed(_)) | Err(Error::MissingCacheItem(_)) => {
             let (username, password) = login_prompt().await;
             match client.login(username.as_str(), password.as_str()).await {
                 Ok(()) => Ok(()),
@@ -90,13 +83,23 @@ pub async fn main() -> Result<(), Error> {
         if let Some(mut drive) = client.drive() {
             if let DriveNode::Folder(folder) = drive.root().await? {
                 for item in folder.iter() {
+                    let item = drive.get_node(item.id()).await?;
                     println!("{}", item);
+                    match item {
+                        DriveNode::Folder(folder) => {
+                            for item in folder.iter() {
+                                println!("{}", item);
+                            }
+                        }, _ => {
+                            
+                        }
+                    }
                 }
             }
         }
 
         let file = if path.exists() {
-            File::open(path)
+            File::options().write(true).open(path)
         } else {
             File::create(path)
         }?;

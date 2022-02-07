@@ -14,7 +14,7 @@ pub enum Error {
     InvalidDriveNodeType,
     InvalidCredentials,
     Needs2FA,
-    AuthenticationFailed,
+    AuthenticationFailed(String),
     TrustFailed,
     MutexError,
 }
@@ -67,8 +67,8 @@ impl std::fmt::Display for Error {
             Error::Needs2FA => {
                 write!(f, "Needs two-factor authentication")
             }
-            Error::AuthenticationFailed => {
-                write!(f, "Authentication failed.")
+            Error::AuthenticationFailed(message) => {
+                write!(f, "Authentication failed: {}", message)
             }
             Error::TrustFailed => {
                 write!(f, "Trust failed.")

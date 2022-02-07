@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use crate::error::Error;
 use crate::session::Session;
 use chrono::{DateTime, FixedOffset};
@@ -5,13 +6,22 @@ use hyper::body::Buf;
 use hyper::{Body, Method, StatusCode};
 use serde_json::json;
 use serde_json::value::Value;
-use std::sync::{Arc, Mutex};
+
+pub struct File {
+    pub id: String,
+    pub name: String,
+    pub size: u64,
+    pub date_created: DateTime<FixedOffset>,
+    pub date_changed: DateTime<FixedOffset>,
+    pub date_modified: DateTime<FixedOffset>,
+    pub last_opened: Option<DateTime<FixedOffset>>,
+}
 
 pub struct Folder {
-    id: String,
-    name: String,
-    date_created: DateTime<FixedOffset>,
-    items: Vec<DriveNode>,
+    pub id: String,
+    pub name: String,
+    pub date_created: DateTime<FixedOffset>,
+    pub items: Vec<DriveNode>,
 }
 
 pub struct FolderIter<'a> {
@@ -40,6 +50,7 @@ impl Folder {
 
 pub enum DriveNode {
     Folder(Folder),
+    File(File)
 }
 
 impl DriveNode {
@@ -58,7 +69,17 @@ impl DriveNode {
                     }
                     items
                 }),
-            })), _ => {
+            })),
+            "FILE" => Ok(DriveNode::File(File {
+                id: String::from(value["drivewsid"].as_str().unwrap()),
+                name: String::from(value["name"].as_str().unwrap()),
+                size: value["size"].as_u64().unwrap(),
+                date_created: DateTime::parse_from_rfc3339(value["dateCreated"].as_str().unwrap())?,
+                date_changed: DateTime::parse_from_rfc3339(value["dateChanged"].as_str().unwrap())?,
+                date_modified: DateTime::parse_from_rfc3339(value["dateModified"].as_str().unwrap())?,
+                last_opened: value["lastOpenTime"].as_str().map_or(None, |time| Some(DateTime::parse_from_rfc3339(time).ok()?)),
+            })),
+            _ => {
                 Err(Error::InvalidDriveNodeType)
             }
         }
@@ -67,18 +88,21 @@ impl DriveNode {
     pub fn id(&self) -> &String {
         match self {
             DriveNode::Folder(folder) => &folder.id,
+            DriveNode::File(file) => &file.id,
         }
     }
 
     pub fn name(&self) -> &String {
         match self {
             DriveNode::Folder(folder) => &folder.name,
+            DriveNode::File(file) => &file.name,
         }
     }
 
     pub fn date_created(&self) -> DateTime<FixedOffset> {
         match self {
             DriveNode::Folder(folder) => folder.date_created,
+            DriveNode::File(file) => file.date_created,
         }
     }
 }
@@ -89,11 +113,21 @@ impl std::fmt::Display for DriveNode {
             DriveNode::Folder(folder) => {
                 write!(
                     f,
-                    "Folder(id={},name={},dateCreated={}, items={})",
+                    "Folder(id={},name={},dateCreated={},items={})",
                     folder.id,
                     folder.name,
                     folder.date_created,
                     folder.items.len()
+                )
+            },
+            DriveNode::File(file) => {
+                write!(
+                    f,
+                    "File(id={},name={},dateCreated={},size={})",
+                    file.id,
+                    file.name,
+                    file.date_created,
+                    file.size,
                 )
             }
         }
@@ -114,14 +148,14 @@ impl DriveService {
     }
 
     pub async fn root(&mut self) -> Result<DriveNode, Error> {
-        self.get_node_data("root").await
+        self.get_node("FOLDER::com.apple.CloudDocs::root").await
     }
 
-    async fn get_node_data(&mut self, id: &str) -> Result<DriveNode, Error> {
+    pub async fn get_node(&mut self, id: &str) -> Result<DriveNode, Error> {
         let uri = format!("{}/retrieveItemDetailsInFolders", self.url);
         let body = json!([
                          {
-                             "drivewsid": format!("FOLDER::com.apple.CloudDocs::{}", id),
+                             "drivewsid": id,
                              "partialData": false
                          }
         ])
@@ -143,10 +177,7 @@ impl DriveService {
                 let drive_node: serde_json::Value = serde_json::from_reader(body.reader())?;
                 Ok(DriveNode::new(&drive_node[0])?)
             } else {
-                let body = hyper::body::aggregate(response).await?;
-                let drive_info: serde_json::Value = serde_json::from_reader(body.reader())?;
-                println!("{}", drive_info);
-                Err(Error::AuthenticationFailed)
+                Err(Error::AuthenticationFailed(String::from("Failed to authenticate to Drive")))
             }
         } else {
             Err(Error::MutexError)
