@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use futures::lock::Mutex;
 use crate::error::Error;
 use crate::session::Session;
 use chrono::{DateTime, FixedOffset};
@@ -147,8 +148,11 @@ impl DriveService {
         }
     }
 
-    pub async fn root(&mut self) -> Result<DriveNode, Error> {
-        self.get_node("FOLDER::com.apple.CloudDocs::root").await
+    pub async fn root(&mut self) -> Result<Folder, Error> {
+        match self.get_node("FOLDER::com.apple.CloudDocs::root").await? {
+            DriveNode::Folder(folder) => Ok(folder),
+            _ => Err(Error::InvalidDriveNodeType)
+        }
     }
 
     pub async fn get_node(&mut self, id: &str) -> Result<DriveNode, Error> {
@@ -161,7 +165,7 @@ impl DriveService {
         ])
         .to_string();
 
-        if let Ok(mut session) = self.session.lock() {
+        let mut session = self.session.lock().await;
             let response = session
                 .request(Method::POST, uri, Body::from(body), |builder| {
                     if let Some(headers) = builder.headers_mut() {
@@ -179,8 +183,5 @@ impl DriveService {
             } else {
                 Err(Error::AuthenticationFailed(String::from("Failed to authenticate to Drive")))
             }
-        } else {
-            Err(Error::MutexError)
-        }
     }
 }

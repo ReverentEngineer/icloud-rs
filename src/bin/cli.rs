@@ -80,19 +80,18 @@ pub async fn main() -> Result<(), Error> {
     if let Ok(mut client) = Client::new(session_data) {
         authenticate(&mut client).await?;
 
-        if let Some(mut drive) = client.drive() {
-            if let DriveNode::Folder(folder) = drive.root().await? {
-                for item in folder.iter() {
-                    let item = drive.get_node(item.id()).await?;
-                    println!("{}", item);
-                    match item {
-                        DriveNode::Folder(folder) => {
-                            for item in folder.iter() {
-                                println!("{}", item);
-                            }
-                        }, _ => {
-                            
+        if let Some(mut drive) = client.drive().await {
+            let root = drive.root().await?;
+            for item in root.iter() {
+                let item = drive.get_node(item.id()).await?;
+                println!("{}", item);
+                match item {
+                    DriveNode::Folder(folder) => {
+                        for item in folder.iter() {
+                            println!("{}", item);
                         }
+                    }, _ => {
+
                     }
                 }
             }
@@ -104,7 +103,7 @@ pub async fn main() -> Result<(), Error> {
             File::create(path)
         }?;
         let writer = BufWriter::new(file);
-        let data = client.save();
+        let data = client.save().await;
         serde_json::to_writer(writer, &data)?;
     }
 
