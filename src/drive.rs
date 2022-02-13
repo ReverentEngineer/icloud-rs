@@ -8,6 +8,7 @@ use hyper::{Body, Method, StatusCode};
 use serde_json::json;
 use serde_json::value::Value;
 
+#[derive(Clone)]
 pub struct File {
     pub id: String,
     pub name: String,
@@ -18,6 +19,7 @@ pub struct File {
     pub last_opened: Option<DateTime<FixedOffset>>,
 }
 
+#[derive(Clone)]
 pub struct Folder {
     pub id: String,
     pub name: String,
@@ -49,6 +51,7 @@ impl Folder {
 
 }
 
+#[derive(Clone)]
 pub enum DriveNode {
     Folder(Folder),
     File(File)
