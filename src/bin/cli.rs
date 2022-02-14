@@ -5,7 +5,7 @@ use std::path::Path;
 extern crate icloud;
 use crate::icloud::drive::DriveNode;
 use crate::icloud::error::Error;
-use crate::icloud::session::SessionData;
+use crate::icloud::SessionData;
 use crate::icloud::Client;
 
 async fn login_prompt() -> (String, String) {
