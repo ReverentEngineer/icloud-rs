@@ -48,6 +48,7 @@ pub struct ServiceInfo {
     pub url: String,
 }
 
+// Session data for authenticating and accessing iCloud.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SessionData {
     oauth_state: String,

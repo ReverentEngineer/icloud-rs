@@ -8,6 +8,8 @@ use hyper::{Body, Method, StatusCode};
 use serde_json::json;
 use serde_json::value::Value;
 
+
+// A file stored in iCloud Drive.
 #[derive(Clone)]
 pub struct File {
     pub id: String,
@@ -19,6 +21,7 @@ pub struct File {
     pub last_opened: Option<DateTime<FixedOffset>>,
 }
 
+// A directory in iCloud Drive.
 #[derive(Clone)]
 pub struct Folder {
     pub id: String,
@@ -51,6 +54,7 @@ impl Folder {
 
 }
 
+// A node within the iCloud Drive filesystem.
 #[derive(Clone)]
 pub enum DriveNode {
     Folder(Folder),
@@ -144,6 +148,8 @@ pub struct DriveService {
 }
 
 impl DriveService {
+
+    // Constructs an interface to an iCloud Drive.
     pub fn new(session: Arc<Mutex<Session>>, url: String) -> DriveService {
         DriveService {
             session: session,
@@ -151,6 +157,7 @@ impl DriveService {
         }
     }
 
+    // Retrieves the root directory within the iCloud Drive.
     pub async fn root(&mut self) -> Result<Folder, Error> {
         match self.get_node("FOLDER::com.apple.CloudDocs::root").await? {
             DriveNode::Folder(folder) => Ok(folder),
@@ -158,6 +165,7 @@ impl DriveService {
         }
     }
 
+    // Retrieves a node within the iCloud Drive.
     pub async fn get_node(&mut self, id: &str) -> Result<DriveNode, Error> {
         let uri = format!("{}/retrieveItemDetailsInFolders", self.url);
         let body = json!([
