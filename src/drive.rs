@@ -192,7 +192,9 @@ impl DriveService {
                 let drive_node: serde_json::Value = serde_json::from_reader(body.reader())?;
                 Ok(DriveNode::new(&drive_node[0])?)
             } else {
-                Err(Error::AuthenticationFailed(String::from("Failed to authenticate to Drive")))
+                let body = hyper::body::aggregate(response).await?;
+                let response: serde_json::Value = serde_json::from_reader(body.reader())?;
+                Err(Error::AuthenticationFailed(serde_json::to_string_pretty(&response)?))
             }
     }
 }
